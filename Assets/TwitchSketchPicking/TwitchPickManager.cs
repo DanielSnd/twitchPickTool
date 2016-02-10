@@ -1,64 +1,133 @@
-﻿using UnityEngine;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Specialized;
+using System.IO;
 using System.Linq;
 using DG.Tweening;
-using JetBrains.Annotations;
+using UnityEngine;
 using UnityEngine.UI;
 
-
-public class TwitchPickManager : MonoBehaviour {
-    public class VoteOption
-    {
-        public string username;
-        public string option;
-        public int votes;
-
-        public VoteOption(string username, string option)
-        {
-            this.username = username;
-            this.option = option;
-            this.votes = 0;
-        }
-    }
-    
-    public TwitchIRC IRC;
-    
-    public Dictionary<string,List<string>> objectsUserDictionary = new Dictionary<string, List<string>>();
-    public Dictionary<int, VoteOption> optionToIndex = new Dictionary<int, VoteOption>();
-    public HashSet<string> usernamesVotedAlready = new HashSet<string>(); 
-    public Button StartStopButton;
-    public Button PickSketchButton;
-    public Button ResetButton;
-    public Button ExportList;
+public class TwitchPickManager : MonoBehaviour
+{
+    public bool acceptMultiple;
     public Button BackToMenu;
+    public bool chromakey;
+    public string cmdStr;
+    private bool collectingSuggestions;
     public TextBasedOnSlider countDownSlider;
-    public Text titleText;
-    public Text StartStopText;
-    public Text pickRandomText;
-    public Text PickText;
-
-    public bool pickInstant = false;
-    private bool collectingIdeas = false;
-    public bool acceptMultiple = false;
-    public bool removeAfterPick = false;
-    public bool chromakey = false;
 
     private bool doingVote;
+    public Button ExportList;
 
-    public float waitForTime = 0;
+    public TwitchIRC IRC;
 
     private int lastCount;
 
-    public int type;
-    public string objStr;
-    public string objsStr;
-    public string cmdStr;
-    public string titleStr;
-    public string startWithOptions;
+    public Color textColor1 = Color.cyan;
+    public Color textColor2 = Color.red;
 
-    void Awake()
+    public Dictionary<string, List<string>> objectsUserDictionary = new Dictionary<string, List<string>>();
+    public string objsStr;
+    public string objStr;
+    public Dictionary<int, VoteOption> optionToIndex = new Dictionary<int, VoteOption>();
+
+    public bool pickInstant;
+    public Text pickRandomText;
+    public Button PickSketchButton;
+    public Text PickText;
+    public bool removeAfterPick;
+    public Button ResetButton;
+    public Button StartStopButton;
+    public Text StartStopText;
+    public string startWithOptions;
+    public string titleStr;
+    public Text titleText;
+
+    public int type;
+    public const int pickSuggestionType = 0;
+    public const int voteSuggestionType = 1;
+    public const int pickUserType = 2;
+
+    public HashSet<string> usernamesVotedAlready = new HashSet<string>();
+
+    public float waitForTime;
+
+    #region Initialization
+    private void Awake()
+    {
+        InitializeIRC();
+    }
+
+    // Use this for initialization
+    private void Start()
+    {
+        type = PlayerPrefs.GetInt("type", 0);
+        switch (type)
+        {
+            case pickSuggestionType:
+                InitializePickingSuggestion();
+                break;
+            case voteSuggestionType:
+                InitializeVotingSuggestion();
+                break;
+            case pickUserType:
+                InitializePickUser();
+                break;
+        }
+        InitializeCommon();
+        
+        IRC.messageRecievedEvent.AddListener(OnChatMsgRecieved);
+        StartStopButton.onClick.AddListener(StartStopClicked);
+        PickSketchButton.onClick.AddListener(PickRandomObject);
+        ResetButton.onClick.AddListener(ResetDictionary);
+        ExportList.onClick.AddListener(DoExportList);
+        BackToMenu.onClick.AddListener(ReturnToMenu);
+        UpdateButtons();
+    }
+
+    private void InitializeCommon()
+    {
+        removeAfterPick = PlayerPrefs.GetInt("removeafter", 0) == 1 ? true : false;
+        pickInstant = PlayerPrefs.GetInt("animatebefore", 0) == 0 ? true : false;
+        chromakey = PlayerPrefs.GetInt("chromakey", 0) == 1 ? true : false;
+        waitForTime = PlayerPrefs.GetFloat("stoptime", 0);
+
+        titleText.text = titleStr;
+        countDownSlider.gameObject.SetActive(false);
+        if (chromakey) { Camera.main.backgroundColor = Color.green; }
+    }
+
+    private void InitializePickUser()
+    {
+        titleStr = PlayerPrefs.GetString("pickusertitle", "");
+        cmdStr = PlayerPrefs.GetString("pickusercmd", "");
+        acceptMultiple = false;
+        pickRandomText.text = "Pick random user ";
+        objStr = PlayerPrefs.GetString("pickuserterm", "");
+        objsStr = PlayerPrefs.GetString("pickusersterm", "");
+    }
+
+    private void InitializeVotingSuggestion()
+    {
+        titleStr = PlayerPrefs.GetString("votesugtitle", "");
+        cmdStr = PlayerPrefs.GetString("votesuggestioncmd", "");
+        objStr = PlayerPrefs.GetString("votesugobj", "");
+        objsStr = PlayerPrefs.GetString("votesugobjs", "");
+        startWithOptions = PlayerPrefs.GetString("startingoptions", "");
+        acceptMultiple = PlayerPrefs.GetInt("voteallowmultiple", 0) == 1 ? true : false;
+        pickRandomText.text = "Vote on " + objsStr;
+    }
+
+    private void InitializePickingSuggestion()
+    {
+        titleStr = PlayerPrefs.GetString("picksugtitle", "");
+        cmdStr = PlayerPrefs.GetString("picksuggestioncmd", "");
+        objStr = PlayerPrefs.GetString("sugobj", "");
+        objsStr = PlayerPrefs.GetString("sugobjs", "");
+        acceptMultiple = PlayerPrefs.GetInt("sugallowmultiple", 0) == 1 ? true : false;
+        pickRandomText.text = "Pick random " + objStr;
+    }
+
+    private void InitializeIRC()
     {
         if (IRC == null)
         {
@@ -71,81 +140,20 @@ public class TwitchPickManager : MonoBehaviour {
         IRC.channelName = PlayerPrefs.GetString("channelname", "");
         IRC.StartIRC();
     }
+    #endregion
 
-    // Use this for initialization
-    void Start()
-    {
-        type = PlayerPrefs.GetInt("type", 0);
-        switch (type)
-        {
-            case 0:
-                titleStr = PlayerPrefs.GetString("picksugtitle", "");
-                cmdStr = PlayerPrefs.GetString("picksuggestioncmd", "");
-                objStr = PlayerPrefs.GetString("sugobj", "");
-                objsStr = PlayerPrefs.GetString("sugobjs", "");
-                acceptMultiple = PlayerPrefs.GetInt("sugallowmultiple", 0) == 1 ? true : false;
-                pickRandomText.text = "Pick random " + objStr;
-                break;
-            case 1:
-                titleStr = PlayerPrefs.GetString("votesugtitle", "");
-                cmdStr = PlayerPrefs.GetString("votesuggestioncmd", "");
-                objStr = PlayerPrefs.GetString("votesugobj", "");
-                objsStr = PlayerPrefs.GetString("votesugobjs", "");
-                startWithOptions = PlayerPrefs.GetString("startingoptions", "");
-                acceptMultiple = PlayerPrefs.GetInt("voteallowmultiple", 0) == 1 ? true : false;
-                pickRandomText.text = "Vote on " + objsStr;
-                break;
-            case 2:
-                titleStr = PlayerPrefs.GetString("pickusertitle", "");
-                cmdStr = PlayerPrefs.GetString("pickusercmd", "");
-                acceptMultiple = false;
-                pickRandomText.text = "Pick random user ";
-                objStr = PlayerPrefs.GetString("pickuserterm", "");
-                objsStr = PlayerPrefs.GetString("pickusersterm", "");
-                break;
-        }
-        removeAfterPick = PlayerPrefs.GetInt("removeafter", 0) == 1 ? true : false;
-        pickInstant = PlayerPrefs.GetInt("animatebefore", 0) == 0 ? true : false;
-        chromakey = PlayerPrefs.GetInt("chromakey", 0) == 1 ? true : false;
-        waitForTime = PlayerPrefs.GetFloat("stoptime", 0);
-        countDownSlider.gameObject.SetActive(false);
-        titleText.text = titleStr;
-        if (chromakey)
-        {
-            Camera.main.backgroundColor = Color.green;
-        }
-        IRC.messageRecievedEvent.AddListener(OnChatMsgRecieved);
-        StartStopButton.onClick.AddListener(StartStopClicked);
-        PickSketchButton.onClick.AddListener(PickRandomObject);
-        ResetButton.onClick.AddListener(ResetDictionary);
-        ExportList.onClick.AddListener(DoExportList);
-        BackToMenu.onClick.AddListener(ReturnToMenu);
-        UpdateButtons();
-    }
-    
-    public void ReturnToMenu()
-    {
-        Application.LoadLevel(0);
-    }
-
-    public void ShakeScale(Transform t)
-    {
-        t.DOKill();
-        t.localScale = Vector3.one;
-        t.DOShakeScale(0.15f, 0.4f);
-    }
-
+    #region Start/Stop
     public void StartStopClicked()
     {
         ShakeScale(StartStopButton.transform);
         PickText.transform.DOKill();
-        if(collectingIdeas || doingVote) StopPicking();
+        if (collectingSuggestions || doingVote) StopPicking();
         else StartPicking();
     }
 
     public void StartPicking()
     {
-        collectingIdeas = true;
+        collectingSuggestions = true;
         UpdateObjsText();
         if (waitForTime > 0) StartCoroutine("CountDownToStop");
 
@@ -155,33 +163,22 @@ public class TwitchPickManager : MonoBehaviour {
         }
     }
 
-    public void StartWithVotesAdd()
-    {
-        string[] words = startWithOptions.Split(',');
-        objectsUserDictionary.Add(IRC.channelName, new List<string>());
-        foreach (string _word in words)
-        {
-            objectsUserDictionary[IRC.channelName].Add(_word);
-        }
-        UpdateButtons();
-        UpdateObjsText();
-    }
-
-    IEnumerator CountDownToStop()
+    private IEnumerator CountDownToStop()
     {
         countDownSlider.sldText.transform.DOKill();
         countDownSlider.sldText.transform.localScale = Vector3.one;
-        countDownSlider.sldText.transform.DOScale(Vector3.one * 1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
+        countDownSlider.sldText.transform.DOScale(Vector3.one*1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
 
-        float timeElapsed = waitForTime;
-        while (timeElapsed>0)
+        var timeElapsed = waitForTime;
+        while (timeElapsed > 0)
         {
             if (!countDownSlider.gameObject.activeInHierarchy) countDownSlider.gameObject.SetActive(true);
 
-            countDownSlider.sld.value = ((timeElapsed / waitForTime));
+            countDownSlider.sld.value = timeElapsed/waitForTime;
             countDownSlider.ChangedValue(1);
-            //countDownSlider.sldText.text = "current = " + currentTimeElapsed.ToString("0.0") + " / timeremaining " + timeRemaining.ToString("0.0");
-            countDownSlider.sldText.text = "<color=#D43115>"+(waitForTime-Mathf.CeilToInt(waitForTime - timeElapsed))+"</color>" + countDownSlider.posvalue;
+            countDownSlider.sldText.text = "<color="+HexConverter(textColor2)+">" +
+                                           (waitForTime - Mathf.CeilToInt(waitForTime - timeElapsed)) + "</color>" +
+                                           countDownSlider.posvalue;
             timeElapsed -= Time.deltaTime;
             yield return null;
         }
@@ -198,18 +195,50 @@ public class TwitchPickManager : MonoBehaviour {
         }
         else
         {
-            collectingIdeas = false;
+            collectingSuggestions = false;
             UpdateObjsText();
         }
         countDownSlider.gameObject.SetActive(false);
     }
+    #endregion
 
-    public void ResetDictionary()
+    #region HandlingChatMessages
+    private void OnChatMsgRecieved(string msg)
     {
-        ShakeScale(ResetButton.transform);
-        PickText.transform.DOKill();
-        objectsUserDictionary.Clear();
-        UpdateObjsText();
+        //parse from buffer.
+        var msgIndex = msg.IndexOf("PRIVMSG #");
+        var msgString = msg.Substring(msgIndex + IRC.channelName.Length + 11);
+        msgString = msgString.ToLower();
+        var user = msg.Substring(1, msg.IndexOf('!') - 1);
+
+        var words = msgString.Split(' ');
+
+        if (collectingSuggestions && msgString.ToLower().StartsWith(cmdStr))
+        {
+            ObjectReceived(user, (type == pickUserType) ? "" : msgString.Substring(cmdStr.Length));
+        }
+
+        if (doingVote && msgString.ToLower().StartsWith("#vote") && words.Length > 1)
+        {
+            var tryParseVote = 0;
+            var successParseInt = int.TryParse(words[1], out tryParseVote);
+            if (successParseInt)
+            {
+                VoteReceived(user, tryParseVote);
+            }
+        }
+
+        if (doingVote && user.ToLower() == IRC.channelName.ToLower() && msgString.ToLower().StartsWith("#removevote") && words.Length > 1)
+        {
+            var tryParseVote = 0;
+            var successParseInt = int.TryParse(words[1], out tryParseVote);
+            if (successParseInt)
+            {
+                optionToIndex.Remove(tryParseVote);
+                UpdateVotesText();
+                if (optionToIndex.Count == 0) { StopPicking(); }
+            }
+        }
     }
 
     public void ObjectReceived(string username, string idea)
@@ -226,10 +255,11 @@ public class TwitchPickManager : MonoBehaviour {
         {
             if (acceptMultiple)
             {
-                AlertManager.Alert(username, AlertManager.Type.Middle, 1.7f, Random.Range(0.35f, 1), Random.Range(0.35f, 1),
-                Random.Range(0.35f, 1), 0.75f);
+                AlertManager.Alert(username, AlertManager.Type.Middle, 1.7f, Random.Range(0.35f, 1),
+                    Random.Range(0.35f, 1),
+                    Random.Range(0.35f, 1), 0.75f);
                 objectsUserDictionary[username].Add(idea);
-                Debug.Log("Added to list of "+username+" / idea: "+idea);
+                Debug.Log("Added to list of " + username + " / idea: " + idea);
             }
             else
             {
@@ -240,6 +270,20 @@ public class TwitchPickManager : MonoBehaviour {
         UpdateObjsText();
     }
 
+    public void VoteReceived(string _username, int _voteindex)
+    {
+        if (!usernamesVotedAlready.Contains(_username.ToLower()) && optionToIndex.ContainsKey(_voteindex))
+        {
+            usernamesVotedAlready.Add(_username.ToLower());
+            optionToIndex[_voteindex].votes++;
+            AlertManager.Alert(_username, AlertManager.Type.Middle, 1.5f, Random.Range(0.35f, 1),
+                Random.Range(0.35f, 1), Random.Range(0.35f, 1), 0.75f);
+        }
+    }
+
+    #endregion
+
+    #region Text/ButtonHandling
     public void UpdateObjsText()
     {
         if (lastCount != objectsUserDictionary.Count)
@@ -254,52 +298,52 @@ public class TwitchPickManager : MonoBehaviour {
             return;
         }
 
-        if (collectingIdeas)
+        if (collectingSuggestions)
         {
-            int totalCount = CountAll();
+            var totalCount = CountAll();
             if (type < 2)
             {
                 //PICK SELECTION
                 PickText.text = (totalCount > 0
-                    ? ("<color=#00ffff>" + totalCount + "</color> " +( totalCount>1 ? objsStr : objStr )+ " so far!")
-                    : "") + "\nTo submit your " + objStr + " type: <color=#00ffff>" + cmdStr + " " + objStr + "</color>";
+                    ? "<color=" + HexConverter(textColor1) + ">" + totalCount + "</color> " + (totalCount > 1 ? objsStr : objStr) + " so far!"
+                    : "") + "\nTo submit your " + objStr + " type: <color=" + HexConverter(textColor1) + ">" + cmdStr + " " + objStr + "</color>";
             }
             else
             {
                 //PICK USER
                 PickText.text = (totalCount > 0
-                    ? ("<color=#00ffff>" + totalCount + "</color> " + (totalCount > 1 ? objsStr : objStr) + " so far!")
-                    : "") + "\nTo enter type: <color=#00ffff>" + cmdStr + "</color>";
+                    ? "<color=" + HexConverter(textColor1) + ">" + totalCount + "</color> " + (totalCount > 1 ? objsStr : objStr) + " so far!"
+                    : "") + "\nTo enter type: <color=" + HexConverter(textColor1) + ">" + cmdStr + "</color>";
             }
         }
         else
         {
-            int amountReceived = CountAll();
+            var amountReceived = CountAll();
             if (type < 2)
             {
                 //PCK SELECTION
                 PickText.text = amountReceived > 0
-                    ? ("<color=#00ffff>" + amountReceived + "</color> " +
-                       (amountReceived > 1 ? objStr : objsStr) + " received! Thanks everyone!")
+                    ? "<color=" + HexConverter(textColor1) + ">" + amountReceived + "</color> " +
+                      (amountReceived > 1 ? objStr : objsStr) + " received! Thanks everyone!"
                     : "";
             }
             else
             {
                 //PICK USER!
                 PickText.text = amountReceived > 0
-                    ? ("<color=#00ffff>" + amountReceived + "</color> " +
-                       (amountReceived > 1 ? objStr : objsStr) + " entered! Thanks everyone!")
+                    ? "<color=" + HexConverter(textColor1) + ">" + amountReceived + "</color> " +
+                      (amountReceived > 1 ? objStr : objsStr) + " entered! Thanks everyone!"
                     : "";
             }
         }
         UpdateButtons();
     }
-    
+
     public void UpdateButtons()
     {
-        int totalObjs = CountAll();
-            PickSketchButton.gameObject.SetActive(totalObjs > 0 && !doingVote && !collectingIdeas);
-            ResetButton.gameObject.SetActive(totalObjs > 0);
+        var totalObjs = CountAll();
+        PickSketchButton.gameObject.SetActive(totalObjs > 0 && !doingVote && !collectingSuggestions);
+        ResetButton.gameObject.SetActive(totalObjs > 0);
         if (doingVote)
         {
             StartStopText.text = "Stop voting!";
@@ -307,37 +351,142 @@ public class TwitchPickManager : MonoBehaviour {
         }
         else
         {
-            StartStopText.text = collectingIdeas
+            StartStopText.text = collectingSuggestions
                 ? "Stop receiving " + objsStr + "!"
                 : "Start receiving " + objsStr + "!";
-            StartStopButton.colors = collectingIdeas ? ResetButton.colors : PickSketchButton.colors;
+            StartStopButton.colors = collectingSuggestions ? ResetButton.colors : PickSketchButton.colors;
         }
-            ExportList.gameObject.SetActive(totalObjs > 0 && type == 2);
-            
+        ExportList.gameObject.SetActive(totalObjs > 0 && type == 2);
     }
 
-    public void DoExportList()
+    public void SetObjectText(string username, bool forReals = true)
     {
-        string usernamestowrite = "";
-        foreach (var _obj in objectsUserDictionary.Keys)
+        if (!objectsUserDictionary.ContainsKey(username)) return;
+        if (forReals)
         {
-            usernamestowrite = (string.IsNullOrEmpty(usernamestowrite) ? _obj : usernamestowrite + " " + _obj);
+            PickText.transform.DOKill();
+            PickText.transform.localScale = Vector3.one;
+            PickText.transform.DOScale(Vector3.one*1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
+            var pickedIdeaIndex = Random.Range(0, objectsUserDictionary[username].Count);
+            if (type == pickUserType)
+            {
+                //PICK USER
+                PickText.text = "<color=" + HexConverter(textColor1) + ">" + username + "</color>";
+            }
+            else
+            {
+                //PICKING SUGGESTION
+                PickText.text = "<color=" + HexConverter(textColor1) + ">" + username + "</color>: " +
+                                objectsUserDictionary[username][pickedIdeaIndex];
+            }
+            if (removeAfterPick)
+            {
+                if (objectsUserDictionary[username].Count > 1) { objectsUserDictionary[username].RemoveAt(pickedIdeaIndex); }
+                else { objectsUserDictionary.Remove(username); }
+            }
         }
-
-        System.IO.File.WriteAllText(Application.dataPath + "/pickUsersList.txt", usernamestowrite);
-        OpenFolder.OpenInFileBrowser(Application.dataPath);
+        else
+        {
+            ShakeScale(PickText.transform, 0.75f, 0.1f);
+            if (type == pickUserType)
+            {
+                PickText.text = "<color=#4d4d4d>" + username + "</color>";
+            }
+            else
+            {
+                PickText.text = "<color=#4d4d4d>" + username + ": " + objectsUserDictionary[username][Random.Range(0, objectsUserDictionary[username].Count)] + "</color>";
+            }
+        }
+        UpdateButtons();
     }
 
-    public int CountAll()
+    public void ShakeScale(Transform t, float scale=1, float duration=0.15f)
     {
-        int total = 0;
-        foreach (List<string> _objlist in objectsUserDictionary.Values)
+        t.DOKill();
+        t.localScale = Vector3.one * scale;
+        t.DOShakeScale(duration, 0.4f);
+    }
+#endregion
+
+    #region HandleVoting
+    public void StartWithVotesAdd()
+    {
+        var words = startWithOptions.Split(',');
+        objectsUserDictionary.Add(IRC.channelName, new List<string>());
+        foreach (var _word in words)
         {
-            total += _objlist.Count;
+            objectsUserDictionary[IRC.channelName].Add(_word);
         }
-        return total;
+        UpdateButtons();
+        UpdateObjsText();
     }
 
+    private void StartVoting()
+    {
+        doingVote = true;
+        UpdateButtons();
+        if (waitForTime == 0) waitForTime = 60;
+
+        optionToIndex.Clear();
+        usernamesVotedAlready.Clear();
+        var optionIndex = 0;
+        foreach (var _userlist in objectsUserDictionary)
+        {
+            foreach (var _s in _userlist.Value)
+            {
+                optionToIndex.Add(optionIndex, new VoteOption(_userlist.Key, _s));
+                optionIndex++;
+            }
+        }
+        UpdateVotesText();
+        StartCoroutine("CountDownToStop");
+    }
+
+    private void UpdateVotesText()
+    {
+        var voteOptions =
+            "<size=24>Type <color=" + HexConverter(textColor1) + ">#VOTE</color> <color=#D43115>number</color> to vote!</size>\n<size=30>";
+        var optionIndex = 0;
+        foreach (var _option in optionToIndex)
+        {
+            voteOptions += "     <color=" + HexConverter(textColor2) + ">[" + _option.Key + "]</color> <color=#c0c0c0ff><i>" +
+                           _option.Value.option +
+                           "</i></color>     ";
+            optionIndex++;
+        }
+        voteOptions += "</size>";
+        PickText.text = voteOptions;
+    }
+
+    public void CalculateVoteResults()
+    {
+        doingVote = false;
+        StopCoroutine("CountDownToStop");
+
+        var winnerOption = new VoteOption("", "");
+
+        var maxVotes = -1;
+        Debug.Log("Checking votes, amount of options = " + optionToIndex.Count);
+        foreach (var _option in optionToIndex.Values)
+        {
+            if (_option.votes > maxVotes)
+            {
+                maxVotes = _option.votes;
+                Debug.Log("Found new winning option " + _option.option + " / vote amount" + _option.votes);
+                winnerOption = new VoteOption(_option.username, _option.option);
+            }
+        }
+
+        PickText.transform.DOKill();
+        PickText.transform.localScale = Vector3.one;
+        PickText.transform.DOScale(Vector3.one*1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
+        Debug.Log("Winner is " + winnerOption.option);
+        PickText.text = "<color=" + HexConverter(textColor1) + ">" + winnerOption.username + "</color>: " + winnerOption.option;
+        UpdateButtons();
+    }
+    #endregion
+
+ #region PickingObject
     public void PickRandomObject()
     {
         if (type == 0 || type == 2)
@@ -361,142 +510,18 @@ public class TwitchPickManager : MonoBehaviour {
         }
     }
 
-    void StartVoting()
-    {
-        doingVote = true;
-        UpdateButtons();
-        if (waitForTime == 0) waitForTime = 60;
-        
-        optionToIndex.Clear();
-        usernamesVotedAlready.Clear();
-        int optionIndex = 0;
-        foreach (var _userlist in objectsUserDictionary)
-        {
-            foreach (string _s in _userlist.Value)
-            {
-                optionToIndex.Add(optionIndex, new VoteOption(_userlist.Key, _s));
-                optionIndex++;
-            }
-        }
-        UpdateVotesText();
-        StartCoroutine("CountDownToStop");
-    }
-
-    private void UpdateVotesText()
-    {
-        string voteOptions =
-            "<size=24>Type <color=#00FFFF>#VOTE</color> <color=#D43115>number</color> to vote!</size>\n<size=30>";
-        int optionIndex = 0;
-        foreach (var _option in optionToIndex)
-        {
-            voteOptions += "     <color=#D43115>[" + _option.Key + "]</color> <color=#c0c0c0ff><i>" + _option.Value.option +
-                           "</i></color>     ";
-            optionIndex++;
-        }
-        voteOptions += "</size>";
-        PickText.text = voteOptions;
-    }
-
-    public void VoteReceived(string _username, int _voteindex)
-    {
-        if (!usernamesVotedAlready.Contains(_username.ToLower()) && optionToIndex.ContainsKey(_voteindex))
-            {
-                usernamesVotedAlready.Add(_username.ToLower());
-                optionToIndex[_voteindex].votes++;
-                AlertManager.Alert(_username, AlertManager.Type.Middle, 1.5f, Random.Range(0.35f, 1),
-                    Random.Range(0.35f, 1), Random.Range(0.35f, 1), 0.75f);
-            }
-    }
-    
-    public void CalculateVoteResults()
-    {
-        doingVote = false;
-        StopCoroutine("CountDownToStop");
-
-        VoteOption winnerOption = new VoteOption("","");
-
-        int maxVotes = -1;
-        Debug.Log("Checking votes, amount of options = "+optionToIndex.Count);
-        foreach (var _option in optionToIndex.Values)
-        {
-            if (_option.votes > maxVotes)
-            {
-                maxVotes = _option.votes;
-                Debug.Log("Found new winning option "+_option.option+" / vote amount"+_option.votes);
-                winnerOption = new VoteOption(_option.username, _option.option);
-            }
-        }
-
-        PickText.transform.DOKill();
-        PickText.transform.localScale = Vector3.one;
-        PickText.transform.DOScale(Vector3.one * 1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
-        Debug.Log("Winner is "+winnerOption.option);
-        PickText.text = "<color=#00ffff>" + winnerOption.username + "</color>: " + winnerOption.option;
-        UpdateButtons();
-    }
-
-    public void SetObjectText(string username, bool forReals = true)
-    {
-        if (!objectsUserDictionary.ContainsKey(username)) return;
-        if (forReals)
-        {
-            PickText.transform.DOKill();
-            PickText.transform.localScale = Vector3.one;
-            PickText.transform.DOScale(Vector3.one*1.07f, 0.6f).SetLoops(-1, LoopType.Yoyo);
-            int pickedIdeaIndex = Random.Range(0, objectsUserDictionary[username].Count);
-            if (type < 2)
-            {
-                //PICKING SUGGESTION
-                PickText.text = "<color=#00ffff>" + username + "</color>: " + objectsUserDictionary[username][pickedIdeaIndex];
-            }
-            else
-            {
-                //PICK USER
-                PickText.text = "<color=#00ffff>" + username + "</color>";
-            }
-            if (removeAfterPick)
-            {
-                if (objectsUserDictionary[username].Count > 1)
-                {
-                    objectsUserDictionary[username].RemoveAt(pickedIdeaIndex);
-                }
-                else
-                {
-                    objectsUserDictionary.Remove(username);
-                }
-            }
-        }
-        else
-        {
-            PickText.transform.DOKill();
-            PickText.transform.localScale = Vector3.one*0.75f;
-            PickText.transform.DOShakeScale(0.1f, 0.4f);
-            if (type == 2)
-            {
-                PickText.text = "<color=#4d4d4d>"+ username +"</color>";
-            }
-            else
-            {
-                PickText.text = "<color=#4d4d4d>"+ username + ": " +
-                                objectsUserDictionary[username][Random.Range(0, objectsUserDictionary[username].Count)] +
-                                "</color>";
-            }
-        }
-        UpdateButtons();
-    }
-
-    IEnumerator DOPickRandom()
+    private IEnumerator DOPickRandom()
     {
         float totalDuration = 15;
-        float duration = totalDuration;
+        var duration = totalDuration;
         while (duration > 0)
         {
-            SetObjectText(objectsUserDictionary.ElementAt(Random.Range(0, objectsUserDictionary.Count)).Key,false);
+            SetObjectText(objectsUserDictionary.ElementAt(Random.Range(0, objectsUserDictionary.Count)).Key, false);
             duration--;
-            yield return new WaitForSeconds((totalDuration-duration)*0.015f);
+            yield return new WaitForSeconds((totalDuration - duration)*0.015f);
         }
-        
-        SetObjectText(objectsUserDictionary.ElementAt(Random.Range(0, objectsUserDictionary.Count)).Key,true);
+
+        SetObjectText(objectsUserDictionary.ElementAt(Random.Range(0, objectsUserDictionary.Count)).Key, true);
 
         yield return null;
 
@@ -505,48 +530,59 @@ public class TwitchPickManager : MonoBehaviour {
             PickSketchButton.gameObject.SetActive(true);
         }
     }
-    
-    void OnChatMsgRecieved(string msg)
+    #endregion
+
+    public void ResetDictionary()
     {
-        //parse from buffer.
-        int msgIndex = msg.IndexOf("PRIVMSG #");
-        string msgString = msg.Substring(msgIndex + IRC.channelName.Length + 11);
-        msgString = msgString.ToLower();
-        string user = msg.Substring(1, msg.IndexOf('!') - 1);
-        if (collectingIdeas && (msgString.ToLower().StartsWith(cmdStr)))
+        ShakeScale(ResetButton.transform);
+        PickText.transform.DOKill();
+        objectsUserDictionary.Clear();
+        UpdateObjsText();
+    }
+
+    public void DoExportList()
+    {
+        var usernamestowrite = "";
+        foreach (var _obj in objectsUserDictionary.Keys)
         {
-            ObjectReceived(user, type<2 ? msgString.Substring(cmdStr.Length) : "");
+            usernamestowrite = string.IsNullOrEmpty(usernamestowrite) ? _obj : usernamestowrite + " " + _obj;
         }
-        if (doingVote && (msgString.ToLower().StartsWith("#vote")))
+
+        File.WriteAllText(Application.dataPath + "/pickUsersList.txt", usernamestowrite);
+        OpenFolder.OpenInFileBrowser(Application.dataPath);
+    }
+
+    public void ReturnToMenu()
+    {
+        Application.LoadLevel(0);
+    }
+
+    public int CountAll()
+    {
+        var total = 0;
+        foreach (var _objlist in objectsUserDictionary.Values)
         {
-            int tryParseVote = 0;
-            string[] words = msgString.Split(' ');
-            if (words.Length > 1)
-            {
-                bool parsedInt = int.TryParse(words[1], out tryParseVote);
-                if (parsedInt)
-                {
-                    VoteReceived(user, tryParseVote);
-                }
-            }
+            total += _objlist.Count;
         }
-        if (doingVote && user.ToLower() == IRC.channelName.ToLower() && (msgString.ToLower().StartsWith("#removevote")))
+        return total;
+    }
+
+    private string HexConverter(Color32 c)
+    {
+        return "#" + c.r.ToString("X2") + c.g.ToString("X2") + c.b.ToString("X2");
+    }
+
+    public class VoteOption
+    {
+        public string option;
+        public string username;
+        public int votes;
+
+        public VoteOption(string username, string option)
         {
-            int tryParseVote = 0;
-            string[] words = msgString.Split(' ');
-            if (words.Length > 1)
-            {
-                bool parsedInt = int.TryParse(words[1], out tryParseVote);
-                if (parsedInt)
-                {
-                    optionToIndex.Remove(tryParseVote);
-                    UpdateVotesText();
-                    if (optionToIndex.Count == 0)
-                    {
-                        StopPicking();
-                    }
-                }
-            }
+            this.username = username;
+            this.option = option;
+            votes = 0;
         }
     }
 }
