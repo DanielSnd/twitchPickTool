@@ -1,7 +1,7 @@
 # twitchPickTool
 Tool made with Unity for picking suggestions or viewers based on twitch chat.
 Requires only the channel name, no need for OAUTH.
-Compiled download links are at the end of this readme.
+**Compiled download links are at the end of this readme.**
 
 ![alt text](http://puu.sh/n2usZ/5b3ba224eb.jpg "Options menu")
 
@@ -20,7 +20,7 @@ Viewers can type a **#command** to be added to a list of possible users. The too
 This is perfect for giveaways or to pick a player to join your game. There's also an option to export list which will export the list of players to a .txt separated by spaces.
 
 # How to use it:
-[![Video tutorial](http://img.youtube.com/vi/8lVgOjFocJI/0.jpg)](http://www.youtube.com/watch?v=8lVgOjFocJI)
+[![Video tutorial](http://puu.sh/n3iSy/04b726c75b.jpg)](http://www.youtube.com/watch?v=8lVgOjFocJI)
 
 First you need to **fill in the channel** name with your channel name, so the app knows which channel to watch for the chat interaction.
 
