@@ -8,12 +8,12 @@ Parts of the text and behavior can be customized on the initial options menu. It
 
 
 ###Pick Suggestion
-Viewers send suggestions with **?#?command**? suggestion and one of the suggestions is picked at random.
+Viewers send suggestions with **#command** suggestion and one of the suggestions is picked at random.
 This could be used to pick which hero they want you to play in the next match of LOL, the next game you'll play or to get sketch suggestions if you're doing some "creative" streaming
 
 ###Vote Suggestion
-Similar to pick suggestion, but instead of picking one at random, it opens a **voting session**, displaying the options suggested on the screen for viewers to vote using ?**#?vote? number**.
-You can add your own options before starting if you don't want anyone suggesting anything. You can also remove options that you don't want for any reason with **?#?removevote? number**.
+Similar to pick suggestion, but instead of picking one at random, it opens a **voting session**, displaying the options suggested on the screen for viewers to vote using **#vote number**.
+You can add your own options before starting if you don't want anyone suggesting anything. You can also remove options that you don't want for any reason with **#removevote number**.
 
 ###Pick User
 Viewers can type a **#command** to be added to a list of possible users. The tool will then pick one at random.
