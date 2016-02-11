@@ -2,6 +2,7 @@
 Tool made with Unity for picking suggestions or viewers based on twitch chat.
 Requires only the channel name, no need for OAUTH.
 **Compiled download links are at the end of this readme.**
+**Unity version used: 5.2.3p4**
 
 ![alt text](http://puu.sh/n2usZ/5b3ba224eb.jpg "Options menu")
 
