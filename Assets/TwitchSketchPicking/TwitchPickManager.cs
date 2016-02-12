@@ -1,10 +1,13 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
+using Random = UnityEngine.Random;
 
 public class TwitchPickManager : MonoBehaviour
 {
@@ -356,7 +359,7 @@ public class TwitchPickManager : MonoBehaviour
                 : "Start receiving " + objsStr + "!";
             StartStopButton.colors = collectingSuggestions ? ResetButton.colors : PickSketchButton.colors;
         }
-        ExportList.gameObject.SetActive(totalObjs > 0 && type == 2);
+        ExportList.gameObject.SetActive(totalObjs > 0);
     }
 
     public void SetObjectText(string username, bool forReals = true)
@@ -542,13 +545,35 @@ public class TwitchPickManager : MonoBehaviour
 
     public void DoExportList()
     {
-        var usernamestowrite = "";
-        foreach (var _obj in objectsUserDictionary.Keys)
+        string usernamestowrite = "";
+        string filename = "/pickUsersList.txt";
+        if (type == 2)
         {
-            usernamestowrite = string.IsNullOrEmpty(usernamestowrite) ? _obj : usernamestowrite + " " + _obj;
+            using (StreamWriter sw = new StreamWriter(Application.dataPath + filename))
+            {
+                // Add some text to the file.
+                foreach (var _obj in objectsUserDictionary.Keys)
+                {
+                    usernamestowrite = string.IsNullOrEmpty(usernamestowrite) ? _obj : usernamestowrite + " " + _obj;
+                }
+                sw.WriteLine(usernamestowrite);
+            }
         }
-
-        File.WriteAllText(Application.dataPath + "/pickUsersList.txt", usernamestowrite);
+        else
+        {
+            filename = "/suggestionList.txt";
+            using (StreamWriter sw = new StreamWriter(Application.dataPath + filename))
+            {
+                foreach (var _obj in objectsUserDictionary)
+                {
+                    foreach (string _s in _obj.Value)
+                    {
+                        sw.WriteLine("[" + _obj.Key + "] " + _s);
+                    }
+                }
+            }
+        }
+        
         OpenFolder.OpenInFileBrowser(Application.dataPath);
     }
 
